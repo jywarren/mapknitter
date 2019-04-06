@@ -12,13 +12,15 @@ class Map < ActiveRecord::Base
   extend FriendlyId
   friendly_id :name, :use => [:slugged, :static]
 
-  attr_accessible :author, :name, :slug, :lat, :lon, :location, :description, :zoom, :license
+  attr_accessor :author, :name, :slug, :lat, :lon, :location, :description, :zoom, :license
+  attr_accessor :image_urls
 
   validates_presence_of :name, :slug, :author, :lat, :lon
   validates_uniqueness_of :slug
   validates_presence_of :location, :message => ' cannot be found. Try entering a latitude and longitude if this problem persists.'
   validates_format_of   :slug,
                         :with => /^[\w-]*$/,
+                        :multiline => true,
                         :message => " must not include spaces and must be alphanumeric, as it'll be used in the URL of your map, like: https://mapknitter.org/maps/your-map-name. You may use dashes and underscores.",
                         :on => :create
 #  validates_format_of :tile_url, :with => /^(http|https):\/\/[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$/ix
@@ -84,7 +86,11 @@ class Map < ActiveRecord::Base
   end
 
   def self.authors(limit = 50)
-    Map.find(:all, :limit => limit, :group => "maps.author", :order => "id DESC", :conditions => ['password = "" AND archived = "false"']).collect(&:author)
+    Map.limit(limit)
+       .order("maps.id DESC")
+       .where('password = "" AND archived = "false"')
+       .collect(&:author)
+#       .group("maps.author")
   end
 
   def self.new_maps
@@ -224,7 +230,8 @@ class Map < ActiveRecord::Base
       pxperm = 100/(resolution).to_f || self.average_scale # pixels per meter
 
       puts '> distorting warpables'
-      origin = self.distort_warpables(pxperm)
+    
+      origin = self.distort_warpables(pxperm, self.placed_warpables, self.latest_export)
       warpable_coords = origin.pop
 
       export = self.export
@@ -275,19 +282,20 @@ class Map < ActiveRecord::Base
   end
 
   # distort all warpables, returns upper left corner coords in x,y
-  def distort_warpables(scale)
-    export = self.latest_export
+  def distort_warpables(scale, warpables, export)
+
     puts '> generating geotiffs of each warpable in GDAL'
     lowest_x=0
     lowest_y=0
     warpable_coords = []
-    warpables = self.placed_warpables
     current = 0
     warpables.each do |warpable|
      current += 1
+
      export.status = 'warping '+current.to_s+' of '+warpables.length.to_s
      puts 'warping '+current.to_s+' of '+warpables.length.to_s
      export.save
+
      my_warpable_coords = warpable.generate_perspectival_distort(scale,self.slug)
      puts '- '+my_warpable_coords.to_s
      warpable_coords << my_warpable_coords
@@ -369,17 +377,6 @@ class Map < ActiveRecord::Base
      "<a href='http://creativecommons.org/publicdomain/zero/1.0/'>Public Domain</a>"
     end
   end
-
-  def polygons(dist)
-    nodes = Node.find(:all,:conditions => ['lat > ? AND lat < ? AND lon > ? AND lon < ? AND way_id != 0 AND map_id != 0',self.lat-dist,self.lat+dist,self.lon-dist,self.lon+dist], :limit => 50, :order => "way_order DESC")
-    Way.where('id IN (?)',nodes.collect(&:way_id).uniq)
-  end
-
-  def legacy_annotations(dist)
-    Node.find(:all,:conditions => ['lat > ? AND lat < ? AND lon > ? AND lon < ? AND way_id = 0 AND map_id != 0',self.lat-dist,self.lat+dist,self.lon-dist,self.lon+dist], :limit => 50, :order => "id DESC")
-  end
-
-  #--------------------
 
   def has_tag(tagname)
     Tag.find(:all, :conditions => { :map_id => self.id, :name => tagname }).length > 0

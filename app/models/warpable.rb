@@ -1,6 +1,6 @@
 class Warpable < ActiveRecord::Base
  
-  attr_accessible :image
+  attr_accessor :image
   attr_accessor :src, :srcmedium # for json generation
 
   # Paperclip; config and production/development specific configs
@@ -62,14 +62,6 @@ class Warpable < ActiveRecord::Base
   def placed?
     !self.width.nil? && self.nodes != ''
   end
-
-  ########################################################
-  # this is for migration to paperclip only; remove later!
-  # Returns true/false if an attachment is thumbnailable.  A thumbnailable attachment has an image content type and the parent_id attribute.
-  def thumbnailable?
-    !self.image.nil? && self.parent_id.nil?
-  end
-  ########################################################
 
   def poly_area
     area = 0

@@ -1,5 +1,5 @@
 class Export < ActiveRecord::Base
-  attr_accessible :map_id, :status, :user_id
+  attr_accessor :map_id, :status, :user_id
 
   belongs_to :map
   belongs_to :user
@@ -39,7 +39,8 @@ class Export < ActiveRecord::Base
   end
 
   def self.histogram_cm_per_pixel_in_tens
-    e = Export.find :all, :conditions => ['cm_per_pixel != "" AND cm_per_pixel < 500'], :order => "cm_per_pixel DESC"
+    e = Export.where('cm_per_pixel != "" AND cm_per_pixel < 500')
+      .order(cm_per_pixel: 'desc')
     hist = []
     (0..(e.first.cm_per_pixel)/10.to_i).each do |bin|
       hist[bin] = 0

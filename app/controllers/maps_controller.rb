@@ -7,14 +7,23 @@ class MapsController < ApplicationController
   layout 'knitter2'
 
   def index
-    @maps = Map.page(params[:page]).per_page(20).where(archived: false, password: '').order('updated_at DESC')
+    # show only maps with at least 1 image to reduce spammer interest
+    @maps = Map.page(params[:page])
+               .per_page(20)
+	       .where(archived: false, password: '')
+	       .order('updated_at DESC')
+               .joins(:warpables)
+	       .group("maps.id")
+    # ensure even maps with no images are shown on front page and don't get lost; some spam risk
+    @new_maps = Map.where(archived: false, password: '')
+	       .order('updated_at DESC')
     render :layout => 'application'
   end
 
   def map
     @maps = Map.where(archived: false, password: '')
-               .select([:author, :name, :lat, :lon, :slug, :archived, :password])
-               .joins(:warpables)
+               .select('author, maps.name, lat, lon, slug, archived, password, users.login as user_login')
+               .joins(:warpables, :user)
                .group("maps.id")
     render layout: false
   end
@@ -34,7 +43,7 @@ class MapsController < ApplicationController
       end
     else
       @map = Map.new(params[:map])
-      if verify_recaptcha(:model => @map, :message => "ReCAPTCHA thinks you're not human! Try again!")
+      if Rails.env != 'production' || verify_recaptcha(:model => @map, :message => "ReCAPTCHA thinks you're not human! Try again!")
         if @map.save
           redirect_to "/maps/#{@map.slug}"
         else
@@ -68,6 +77,21 @@ class MapsController < ApplicationController
     if params[:legacy]
       render :template => 'map/show', :layout => 'knitter'
     end
+  end
+
+  def archive
+    @map = Map.find_by_slug(params[:id])
+    if logged_in? && current_user.can_delete?(@map)
+      @map.archived = true
+      if @map.save
+        flash[:notice] = "Archived map."
+      else
+        flash[:error] = "Failed to archive map."
+      end
+    else
+      flash[:error] = "Only admins may archive maps."
+    end
+    redirect_to '/?_=' + Time.now.to_i.to_s
   end
 
   def embed
@@ -153,8 +177,14 @@ class MapsController < ApplicationController
     area = params[:id] || "this area"
     @title = "Maps in #{area}"
     ids = Map.bbox(params[:minlat],params[:minlon],params[:maxlat],params[:maxlon]).collect(&:id)
-    @maps = Map.where(password: '').where('id IN (?)',ids).paginate(:page => params[:page], :per_page => 24)
-    render "maps/index", :layout => "application"
+    @maps = Map.where(password: '').where('id IN (?)',ids).paginate(:page => params[:page], :per_page => 24).except(:styles)
+    @maps.each do |map|
+      map.image_urls = map.warpables.map{ |warpable| warpable.image.url}
+    end
+    respond_to do |format|
+      format.html { render "maps/index", :layout => "application" } 
+      format.json { render :json => @maps.to_json(methods: :image_urls) }
+    end
   end
 
   # list by license

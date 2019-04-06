@@ -11,10 +11,29 @@ class MapsControllerTest < ActionController::TestCase
   def teardown
   end
 
+  test "should display image url for maps by region" do
+    get :region , { minlat: 40, maxlat: 50, minlon: -80, maxlon: -60, format: :json}
+
+    image_urls = []
+    @map.warpables.each do | warpable|
+      image_urls.append(warpable.image.url)
+    end
+
+    json_response = JSON.parse(response.body)
+
+    assert_response :success
+    assert_equal image_urls, json_response[0]['image_urls']
+  end
+
   test "should get index" do
     get :index
     assert_response :success
     assert_not_nil :maps
+  end
+
+  test "should get map of maps" do
+    get :map
+    assert_response :success
   end
 
   test "should get new" do
